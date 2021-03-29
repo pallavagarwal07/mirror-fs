@@ -16,6 +16,7 @@ type File struct {
 	Realpath    string
 	Fakepath    string
 	Transformer Transformer
+	Server      *Server
 }
 
 type FileHandle struct {
@@ -29,9 +30,9 @@ var _ = (fs.NodeSetattrer)((*File)(nil))
 
 var _ = (fs.FileReader)((*FileHandle)(nil))
 var _ = (fs.FileGetattrer)((*FileHandle)(nil))
-
 var _ = (fs.FileWriter)((*FileHandle)(nil))
 var _ = (fs.FileSetattrer)((*FileHandle)(nil))
+var _ = (fs.FileReleaser)((*FileHandle)(nil))
 
 func slice(data []byte, start, end int64) []byte {
 	size := int64(len(data))
@@ -46,21 +47,35 @@ func slice(data []byte, start, end int64) []byte {
 
 func (f *File) Open(
 	ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
+	if fh, ok := f.Server.fhCache[f.Fakepath]; ok {
+		return &fh, 0, 0
+	}
 	data, err := os.ReadFile(f.Realpath)
 	if err != nil {
 		return nil, 0, toErrno(err)
 	}
-	data, err = f.Transformer.DataTransform(
-		&OpCtx{Context: ctx, realpath: f.Realpath, fakepath: f.Fakepath}, data)
+	data, err = f.Transformer.DataTransform(&OpCtx{
+		Context:  ctx,
+		realpath: f.Realpath,
+		fakepath: f.Fakepath,
+		basepath: f.Server.Realpath,
+	}, data)
 	if err != nil {
 		return nil, 0, toErrno(err)
 	}
-	return &FileHandle{file: f, data: data}, 0, 0
+	filehandle := &FileHandle{file: f, data: data}
+	f.Server.fhCache[f.Fakepath] = *filehandle
+	return filehandle, 0, 0
 }
 
 func (f *FileHandle) Read(
 	_ context.Context, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
 	return fuse.ReadResultData(slice(f.data, off, off+int64(len(dest)))), 0
+}
+
+func (f *FileHandle) Release(_ context.Context) syscall.Errno {
+	delete(f.file.Server.fhCache, f.file.Fakepath)
+	return 0
 }
 
 func (fh *FileHandle) Getattr(
@@ -105,8 +120,12 @@ func (f *File) Setattr(
 
 func (fh *FileHandle) write(ctx context.Context, backup []byte) syscall.Errno {
 	f := fh.file
-	out, err := f.Transformer.(ReverseTransformer).ReverseTransform(
-		&OpCtx{Context: ctx, realpath: f.Realpath, fakepath: f.Fakepath}, backup)
+	out, err := f.Transformer.(ReverseTransformer).ReverseTransform(&OpCtx{
+		Context:  ctx,
+		realpath: f.Realpath,
+		fakepath: f.Fakepath,
+		basepath: f.Server.Realpath,
+	}, backup)
 	if err != nil {
 		return toErrno(err)
 	}

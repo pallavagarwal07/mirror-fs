@@ -16,6 +16,7 @@ type Dir struct {
 	Realpath    string
 	Fakepath    string
 	Transformer Transformer
+	Server      *Server
 
 	cache map[string]string
 }
@@ -50,8 +51,12 @@ func (d *Dir) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 		if err != nil {
 			return nil, toErrno(err)
 		}
-		out, err := d.Transformer.AttrTransform(
-			&OpCtx{Context: ctx, realpath: d.Realpath, fakepath: d.Fakepath}, info)
+		out, err := d.Transformer.AttrTransform(&OpCtx{
+			Context:  ctx,
+			realpath: d.Realpath,
+			fakepath: d.Fakepath,
+			basepath: d.Server.Realpath,
+		}, info)
 		if err != nil {
 			return nil, toErrno(err)
 		}
@@ -78,8 +83,12 @@ func (d *Dir) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.
 	if err != nil {
 		return nil, toErrno(err)
 	}
-	finfo, err := d.Transformer.AttrTransform(
-		&OpCtx{Context: ctx, realpath: d.Realpath, fakepath: d.Fakepath}, info)
+	finfo, err := d.Transformer.AttrTransform(&OpCtx{
+		Context:  ctx,
+		realpath: d.Realpath,
+		fakepath: d.Fakepath,
+		basepath: d.Server.Realpath,
+	}, info)
 	if err != nil {
 		return nil, toErrno(err)
 	}
@@ -91,10 +100,18 @@ func (d *Dir) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.
 	var inode fs.InodeEmbedder
 	if finfo.Mode().IsDir() {
 		inode = &Dir{
-			Realpath: realpath, Fakepath: fakepath, Transformer: d.Transformer}
+			Realpath:    realpath,
+			Fakepath:    fakepath,
+			Transformer: d.Transformer,
+			Server:      d.Server,
+		}
 	} else {
 		inode = &File{
-			Realpath: realpath, Fakepath: fakepath, Transformer: d.Transformer}
+			Realpath:    realpath,
+			Fakepath:    fakepath,
+			Transformer: d.Transformer,
+			Server:      d.Server,
+		}
 	}
 	return d.NewInode(ctx, inode, fs.StableAttr{
 		Mode: syscallModeFromFs(finfo.Mode()),

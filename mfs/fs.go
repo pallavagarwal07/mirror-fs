@@ -31,11 +31,19 @@ type Server struct {
 	Transformer Transformer
 	Options     []string
 	Debug       bool
+
+	fhCache map[string]FileHandle
 }
 
 func (s *Server) Mount(mountPath string) error {
+	s.fhCache = make(map[string]FileHandle)
+
 	dir := &Dir{
-		Realpath: s.Realpath, Fakepath: mountPath, Transformer: s.Transformer}
+		Realpath:    s.Realpath,
+		Fakepath:    mountPath,
+		Transformer: s.Transformer,
+		Server:      s,
+	}
 	server, err := fs.Mount(mountPath, dir, &fs.Options{
 		MountOptions: fuse.MountOptions{
 			Debug:   s.Debug,

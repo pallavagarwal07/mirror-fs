@@ -11,6 +11,7 @@ type Ctx interface {
 
 	Realpath() string
 	Fakepath() string
+	Basepath() string
 }
 
 type OpCtx struct {
@@ -18,10 +19,12 @@ type OpCtx struct {
 
 	realpath string
 	fakepath string
+	basepath string
 }
 
 func (o *OpCtx) Realpath() string { return o.realpath }
 func (o *OpCtx) Fakepath() string { return o.fakepath }
+func (o *OpCtx) Basepath() string { return o.basepath }
 
 var _ Ctx = (*OpCtx)(nil)
 
